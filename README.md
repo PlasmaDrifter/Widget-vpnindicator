@@ -1,7 +1,7 @@
 # VPN Status Indicator
 
 > [!NOTE]
-> **Community Hub:** Have questions, custom configs, or feature ideas? Join our subreddit community at [**r/PlasmaDrifterProjects**](https://reddit.com/r/PlasmaDrifterProjects)!
+> **Questions, custom configs, or ideas?** Join us on Reddit at <nobr>[**r/PlasmaDrifterProjects**](https://reddit.com/r/PlasmaDrifterProjects)</nobr>!
 
 A KDE Plasma panel widget that shows whether your VPN (WireGuard `wg0` / PureVPN) is connected, with a click-to-toggle button.
 
