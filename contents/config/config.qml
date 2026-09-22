@@ -8,4 +8,9 @@ ConfigModel {
         icon: "configure"
         source: "configGeneral.qml"
     }
+    ConfigCategory {
+        name: i18n("Setup Guide")
+        icon: "help-about"
+        source: "configGuide.qml"
+    }
 }
