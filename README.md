@@ -5,8 +5,8 @@ A KDE Plasma panel widget that shows whether your VPN (WireGuard `wg0` / PureVPN
 > [!NOTE]
 > **Questions, custom configs, or ideas?** Join us on Reddit at <nobr>[**r/PlasmaDrifterProjects**](https://reddit.com/r/PlasmaDrifterProjects)</nobr>!
 
-![vpnindicator](vpnindicator.png)
-![vpnindicator](desktop-2.png)
+![vpnindicator](Screenshot_20260922_172359.png)
+![vpnindicator](Screenshot_20260922_172336.png)
 
 ## Features
 
