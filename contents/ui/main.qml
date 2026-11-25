@@ -5,6 +5,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.plasma5support as Plasma5Support
+import org.kde.plasma.networkmanagement as PlasmaNM
 import org.kde.kirigami as Kirigami
 
 PlasmoidItem {
@@ -17,41 +18,77 @@ PlasmoidItem {
 
     property bool vpnActive: false
     property string currentStatusText: i18n("Checking VPN...")
+    property string pendingToggleCmd: ""
 
-    // Check status command:
-    // 1. Checks if the sysfs directory exists for the interface (e.g. /sys/class/net/wg0)
-    // 2. Checks if nmcli active connections contain the connection name (case-insensitive)
-    property string checkCommand: "if [ -d /sys/class/net/" + plasmoid.configuration.vpnInterface + " ] || nmcli connection show --active | grep -qi \"" + plasmoid.configuration.vpnConnectionName + "\"; then echo \"active\"; else echo \"inactive\"; fi"
+    function shellQuote(val) {
+        return "'" + String(val || "").replace(/'/g, "'\\''") + "'"
+    }
 
-    // Toggle command:
-    // If active, tries to bring down via nmcli, then ip link, then wg-quick
-    // If inactive, tries to bring up via nmcli, then ip link, then wg-quick
-    property string toggleCommand: "if [ -d /sys/class/net/" + plasmoid.configuration.vpnInterface + " ] || nmcli connection show --active | grep -qi \"" + plasmoid.configuration.vpnConnectionName + "\"; then (nmcli connection down \"" + plasmoid.configuration.vpnConnectionName + "\" || ip link set dev " + plasmoid.configuration.vpnInterface + " down || wg-quick down " + plasmoid.configuration.vpnInterface + "); else (nmcli connection up \"" + plasmoid.configuration.vpnConnectionName + "\" || ip link set dev " + plasmoid.configuration.vpnInterface + " up || wg-quick up " + plasmoid.configuration.vpnInterface + "); fi"
+    readonly property string safeIface: (plasmoid.configuration.vpnInterface || "").trim()
+    readonly property string safeConn: (plasmoid.configuration.vpnConnectionName || "").trim()
 
-    // Timer to poll status
+    readonly property string checkCommand: {
+        var qi = shellQuote(safeIface)
+        var qc = shellQuote(safeConn)
+        var checks = []
+        if (safeIface.length > 0) checks.push("[ -d /sys/class/net/" + qi + " ]")
+        if (safeConn.length > 0) checks.push("nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxiq -- " + qc)
+        if (checks.length === 0) return "echo inactive"
+        return "if " + checks.join(" || ") + "; then echo active; else echo inactive; fi"
+    }
+
+    readonly property string toggleCommand: {
+        var qi = shellQuote(safeIface)
+        var qc = shellQuote(safeConn)
+        var isUpCheck = []
+        var downCmds = []
+        var upCmds = []
+        if (safeIface.length > 0) isUpCheck.push("[ -d /sys/class/net/" + qi + " ]")
+        if (safeConn.length > 0) {
+            isUpCheck.push("nmcli -t -f NAME connection show --active 2>/dev/null | grep -Fxiq -- " + qc)
+            downCmds.push("nmcli connection down " + qc)
+            upCmds.push("nmcli connection up " + qc)
+        }
+        if (safeIface.length > 0) {
+            downCmds.push("ip link set dev " + qi + " down")
+            downCmds.push("wg-quick down " + qi)
+            upCmds.push("ip link set dev " + qi + " up")
+            upCmds.push("wg-quick up " + qi)
+        }
+        if (isUpCheck.length === 0) return "exit 1"
+        return "if " + isUpCheck.join(" || ") + "; then (" + downCmds.join(" || ") + "); else (" + upCmds.join(" || ") + "); fi"
+    }
+
+    PlasmaNM.NetworkStatus {
+        id: nmStatus
+        onActiveConnectionsChanged: root.refreshStatus()
+    }
+
+    // Fallback poll only when checking a non-NM sysfs interface, or slow periodic verification
     Timer {
         id: pollTimer
-        interval: plasmoid.configuration.checkInterval * 1000
+        interval: Math.max(5, plasmoid.configuration.checkInterval || 15) * 1000
         running: true
         repeat: true
         triggeredOnStart: true
-        onTriggered: {
-            executableDataSource.exec(root.checkCommand);
-        }
+        onTriggered: root.refreshStatus()
+    }
+
+    function refreshStatus() {
+        executableDataSource.exec(root.checkCommand)
     }
 
     // React to configuration changes
     Connections {
         target: plasmoid.configuration
-        function onVpnInterfaceChanged() { pollTimer.restart(); }
-        function onVpnConnectionNameChanged() { pollTimer.restart(); }
+        function onVpnInterfaceChanged() { root.refreshStatus(); }
+        function onVpnConnectionNameChanged() { root.refreshStatus(); }
         function onCheckIntervalChanged() {
-            pollTimer.interval = plasmoid.configuration.checkInterval * 1000;
+            pollTimer.interval = Math.max(5, plasmoid.configuration.checkInterval || 15) * 1000;
             pollTimer.restart();
         }
     }
 
-    // Legacy DataSource support layer in Plasma 6
     Plasma5Support.DataSource {
         id: executableDataSource
         engine: "executable"
@@ -60,17 +97,28 @@ PlasmoidItem {
         onNewData: function(source, data) {
             disconnectSource(source);
 
-            // Only process state check command outputs to prevent loops/spams
+            if (source === root.pendingToggleCmd) {
+                root.pendingToggleCmd = "";
+                var exitCode = data["exit code"];
+                if (exitCode !== undefined && exitCode !== 0) {
+                    var err = (data["stderr"] || "").trim();
+                    root.currentStatusText = err.length > 0 ? i18n("Toggle failed: %1", err) : i18n("Toggle failed (exit %1)", exitCode);
+                } else {
+                    root.refreshStatus();
+                }
+                return;
+            }
+
             if (source !== root.checkCommand) {
                 return;
             }
 
-            var output = data["stdout"].trim();
+            var output = (data["stdout"] || "").trim();
             var isActive = (output === "active");
             root.vpnActive = isActive;
             root.currentStatusText = isActive
-            ? i18n("VPN Active (%1)", plasmoid.configuration.vpnInterface)
-            : i18n("VPN Disconnected");
+                ? i18n("VPN Active (%1)", root.safeIface || root.safeConn)
+                : i18n("VPN Disconnected");
         }
 
         function exec(cmd) {
@@ -80,9 +128,8 @@ PlasmoidItem {
 
     function toggleVpn() {
         root.currentStatusText = i18n("Toggling VPN...");
-        executableDataSource.exec(root.toggleCommand);
-        // Force a refresh soon after
-        pollTimer.restart();
+        root.pendingToggleCmd = root.toggleCommand;
+        executableDataSource.exec(root.pendingToggleCmd);
     }
 
     // Panel representation
