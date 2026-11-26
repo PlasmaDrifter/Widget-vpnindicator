@@ -11,7 +11,7 @@
             <default>PureVPN</default>
         </entry>
         <entry name="checkInterval" type="Int">
-            <default>15</default>
+            <default>60</default>
         </entry>
         <entry name="activeIcon" type="String">
             <default>network-vpn-activated</default>

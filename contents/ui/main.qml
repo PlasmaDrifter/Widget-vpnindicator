@@ -67,7 +67,7 @@ PlasmoidItem {
     // Fallback poll only when checking a non-NM sysfs interface, or slow periodic verification
     Timer {
         id: pollTimer
-        interval: Math.max(5, plasmoid.configuration.checkInterval || 15) * 1000
+        interval: Math.max(5, plasmoid.configuration.checkInterval || 60) * 1000
         running: true
         repeat: true
         triggeredOnStart: true
@@ -84,7 +84,7 @@ PlasmoidItem {
         function onVpnInterfaceChanged() { root.refreshStatus(); }
         function onVpnConnectionNameChanged() { root.refreshStatus(); }
         function onCheckIntervalChanged() {
-            pollTimer.interval = Math.max(5, plasmoid.configuration.checkInterval || 15) * 1000;
+            pollTimer.interval = Math.max(5, plasmoid.configuration.checkInterval || 60) * 1000;
             pollTimer.restart();
         }
     }
